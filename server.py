@@ -23,12 +23,12 @@ import logging
 import sys
 import time
 
-# Cleaner logging setup - INFO level is usually sufficient
+# Logging setup
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s [%(threadName)s] %(levelname)s: %(message)s',
                     datefmt='%H:%M:%S') # Use HH:MM:SS for time
 
-# --- Protocol Helpers (Essential - Unchanged) ---
+# --- Protocol Helpers (Essential) ---
 def send_message(sock, message_data):
     """Packs and sends a message (list -> JSON -> UTF-8 -> length prefix -> socket)."""
     try:
@@ -77,28 +77,41 @@ clients = {} # {screen_name: receiving_socket}
 clients_lock = threading.Lock()
 
 # --- Core Server Logic ---
+
 def broadcast(message_list, sender_name="Server"):
-    """Sends message to all clients, cleaning up failed connections."""
+    """Sends message to all clients using the new log format."""
     msg_type = message_list[0]
-    # Log high-level intent
-    logging.info(f"Broadcasting {msg_type} from {sender_name} to {len(clients)} client(s).")
+    client_count = 0
+    with clients_lock: # Get count under lock for accuracy
+        client_count = len(clients)
+
+    # Log message relay intention with new format
+    # Check message type to avoid logging internal EXIT broadcasts triggered by remove_client excessively
+    if msg_type != "EXIT" or sender_name != "Server": # Log user broadcasts and server joins
+         logging.info(f"Message: {msg_type} From: {sender_name} To: all ({client_count} clients)")
+
     disconnected_clients = []
     with clients_lock:
         client_items = list(clients.items()) # Iterate over a copy
         for name, sock in client_items:
             if not send_message(sock, message_list):
-                logging.warning(f"Send failed during broadcast to '{name}'. Marking for removal.")
+                # Log failures minimally
+                if msg_type != "EXIT": # Don't warn about failures sending EXIT notification
+                     logging.warning(f"Send failed to '{name}' during broadcast.")
                 disconnected_clients.append(name) # Mark for removal
 
     # Remove disconnected outside lock iteration
     for name in disconnected_clients:
-        # Let remove_client handle logging and socket closing
-        remove_client(name, notify=False) # Don't double-notify exit
+        remove_client(name, notify=False) # remove_client handles its own logging
 
 def send_private(message_list, recipient_name):
-    """Sends message to a single client."""
+    """Sends message to a single client using the new log format."""
+    msg_type = message_list[0]
     sender_name = message_list[1] # Assume sender is second element
-    logging.info(f"Attempting PM from '{sender_name}' to '{recipient_name}'.")
+
+    # Log message relay intention with new format
+    logging.info(f"Message: {msg_type} From: {sender_name} To: {recipient_name}")
+
     sock_to_send = None
     recipient_found = False
     with clients_lock:
@@ -109,23 +122,20 @@ def send_private(message_list, recipient_name):
     if sock_to_send:
         if not send_message(sock_to_send, message_list):
             logging.warning(f"Send failed for PM to '{recipient_name}'. Removing client.")
-            # remove_client handles logging, closing, and notification
-            remove_client(recipient_name, notify=True)
+            remove_client(recipient_name, notify=True) # remove_client handles logging
             return False # Send failed
         else:
-            # logging.info(f"PM successfully sent to '{recipient_name}'.") # Optional success log
+            # logging.info(f"PM successfully delivered to '{recipient_name}'.") # Optional: Too verbose now
             return True # Send succeeded
     elif recipient_found:
-        # Should not happen if lock logic is correct, but log if it does
-         logging.error(f"Logic error: Recipient '{recipient_name}' found but socket was None.")
+         logging.error(f"Logic error: Recipient '{recipient_name}' found but socket was None during PM send.")
          return False
     else:
         logging.warning(f"PM recipient '{recipient_name}' not found.")
-        # Optionally: Send failure message back to sender (complex)
         return False # Recipient not found
 
 def remove_client(screen_name, notify=True):
-    """Removes client socket and optionally notifies others."""
+    """Removes client socket and logs the removal."""
     sock_to_close = None
     client_was_present = False
     with clients_lock:
@@ -134,42 +144,40 @@ def remove_client(screen_name, notify=True):
             client_was_present = True
 
     if sock_to_close:
-        logging.info(f"Removing client '{screen_name}'.")
+        # Log the removal event clearly
+        logging.info(f"Client removed: {screen_name}")
+        try:
+            # Shutdown may help ensure receiver knows socket is closing before actual close
+            sock_to_close.shutdown(socket.SHUT_RDWR)
+        except OSError: pass # Ignore if already closed/broken
         try:
             sock_to_close.close()
-        except OSError as e:
-            logging.error(f"Error closing socket for {screen_name}: {e}")
-        # Notify remaining clients if required
-        if notify and client_was_present: # Only notify if removal happened and notification desired
-            # Use a temporary list for the message
+        except OSError: pass # Ignore closing errors for already closed socket
+
+        # If notify is true, broadcast the EXIT message
+        if notify and client_was_present:
             exit_notification = ["EXIT", screen_name]
-            broadcast(exit_notification, "Server") # Broadcast handles its own logging
-    elif client_was_present:
-         logging.warning(f"Client '{screen_name}' existed in dict but socket was already None/removed.")
-    # else: No need to log if attempting to remove already gone client
+            # broadcast() will log the EXIT message relay if needed (modified broadcast to skip server EXITs)
+            broadcast(exit_notification, "Server") # Let broadcast handle sending
+    # No log needed if client wasn't present
+
 
 def handle_client_messages(send_sock, address):
-    """Thread target for handling messages FROM a single client's sending socket."""
-    logging.info(f"Handler started for sending socket {address}")
+    """Handles messages FROM a client. Logs identification and delegates message handling."""
+    logging.info(f"Handler started for {address}")
     client_screen_name = None
-    last_received_msg = None # Store last msg for finally block context
+    last_received_msg = None
     try:
         while True:
             msg = receive_message(send_sock)
             last_received_msg = msg
 
             if msg is None:
-                # Log disconnect based on whether client was identified
                 logging.info(f"Connection closed by {client_screen_name or address}.")
                 break
 
-            # Log raw message minimally for tracing, use DEBUG if too noisy
-            # logging.debug(f"Raw msg from {client_screen_name or address}: {msg}")
-
             # Basic validation
-            if not isinstance(msg, list) or len(msg) < 2:
-                logging.warning(f"Invalid msg format from {client_screen_name or address}: {msg}")
-                continue
+            if not isinstance(msg, list) or len(msg) < 2: continue # Ignore silently
 
             msg_type = msg[0]
             sender = msg[1]
@@ -178,39 +186,31 @@ def handle_client_messages(send_sock, address):
             if client_screen_name is None:
                 if isinstance(sender, str) and sender:
                      with clients_lock:
-                         if sender in clients: # Check if name is registered by WritingThread
+                         if sender in clients:
                              client_screen_name = sender
-                             logging.info(f"Identified sending socket {address} as '{client_screen_name}'")
-                         else:
-                             logging.warning(f"Sender '{sender}' from {address} not registered. Ignoring message.")
-                             continue
-                else:
-                     logging.warning(f"Invalid sender in first message from {address}. Msg: {msg}")
-                     continue
+                             logging.info(f"Handler identified {address} as '{client_screen_name}'")
+                         else: continue # Ignore messages until registered
+                else: continue # Ignore invalid first message
 
-            # Sanity check: ensure message sender matches identified client
-            if sender != client_screen_name:
-                 logging.warning(f"Msg sender '{sender}' != identified client '{client_screen_name}'. Ignoring.")
-                 continue
+            if not client_screen_name: continue # Should not happen if logic is correct
 
-            # --- Process message types (log action summary) ---
+            # Verify sender matches identified client
+            if sender != client_screen_name: continue # Ignore mismatched messages silently
+
+            # --- Delegate message processing (logging happens inside broadcast/send_private) ---
             if msg_type == "BROADCAST" and len(msg) == 3:
-                # Log processing intent, broadcast() logs sending intent
-                logging.info(f"Processing BROADCAST from '{client_screen_name}'.")
                 broadcast(msg, client_screen_name)
             elif msg_type == "PRIVATE" and len(msg) == 4:
                 recipient = msg[3]
-                # Log processing intent, send_private() logs sending intent/outcome
-                logging.info(f"Processing PRIVATE from '{client_screen_name}' to '{recipient}'.")
                 send_private(msg, recipient)
             elif msg_type == "EXIT" and len(msg) == 2:
-                 logging.info(f"Processing EXIT from '{client_screen_name}'.")
+                 logging.info(f"Received EXIT command from '{client_screen_name}'.")
                  break # Exit loop, finally handles cleanup
             else:
-                logging.warning(f"Unknown type or invalid format from '{client_screen_name}'. Msg: {msg}")
+                 logging.warning(f"Unknown message type '{msg_type}' or format from '{client_screen_name}'.")
 
     except Exception as e:
-        logging.error(f"Exception in handler for {client_screen_name or address}: {e}", exc_info=False) # Keep brief
+        logging.error(f"Exception in handler for {client_screen_name or address}: {e}", exc_info=False)
     finally:
         logging.info(f"Handler stopping for {client_screen_name or address}.")
         if send_sock:
@@ -221,33 +221,31 @@ def handle_client_messages(send_sock, address):
             was_exit_cmd = (last_received_msg and isinstance(last_received_msg, list) and
                             len(last_received_msg) == 2 and last_received_msg[0] == "EXIT")
             remove_client(client_screen_name, notify=not was_exit_cmd)
-        # No need to log if handler exits before identification, covered by disconnect log
+
 
 def reading_server(host, port):
-    """Listens for client SENDING sockets and starts handler threads."""
+    """Listens for SENDING sockets. Logs connections."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listen_sock:
             listen_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             listen_sock.bind((host, port))
             listen_sock.listen()
             logging.info(f"Reading server listening on {host}:{port}")
-            while True: # Main accept loop
+            while True:
                     try:
                         client_sock, address = listen_sock.accept()
-                        # Log acceptance clearly
                         logging.info(f"Accepted SENDING connection from {address}")
-                        # Start handler thread
                         thread = threading.Thread(target=handle_client_messages,
                                                   args=(client_sock, address),
                                                   daemon=True,
-                                                  name=f"Handler-{address[1]}") # Name thread by port
+                                                  name=f"Handler-{address[1]}")
                         thread.start()
                     except OSError:
-                         logging.info("Reading server socket closed, stopping accept loop.")
-                         break # Stop loop if listen socket closed
+                         logging.info("Reading server socket closed.")
+                         break
                     except Exception as e:
                          logging.error(f"Error accepting connection in reading thread: {e}")
-                         time.sleep(1) # Avoid busy-loop on persistent accept errors
+                         time.sleep(1)
     except Exception as e:
         logging.critical(f"Reading server failed to initialize: {e}", exc_info=True)
     finally:
@@ -255,23 +253,20 @@ def reading_server(host, port):
 
 
 def writing_server(host, port):
-    """Listens for client RECEIVING sockets, handles START, registers clients."""
+    """Listens for RECEIVING sockets, handles START. Logs registration."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listen_sock:
             listen_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             listen_sock.bind((host, port))
             listen_sock.listen()
             logging.info(f"Writing server listening on {host}:{port}")
-            while True: # Main accept loop
+            while True:
                 recv_sock = None
                 address = None
                 try:
-                    # logging.info("Writing server waiting to accept...") # Too noisy
                     recv_sock, address = listen_sock.accept()
                     logging.info(f"Accepted RECEIVING connection from {address}")
-
                     msg = receive_message(recv_sock)
-                    # logging.info(f"Received initial msg from {address}: {msg}") # Can be noisy
 
                     # Validate START message
                     if msg and isinstance(msg, list) and len(msg) == 2 and \
@@ -280,40 +275,38 @@ def writing_server(host, port):
                         client_added = False
                         with clients_lock:
                             if screen_name_to_add in clients:
-                                logging.warning(f"Screen name '{screen_name_to_add}' taken. Rejecting {address}.")
+                                logging.warning(f"Client rejected: {screen_name_to_add} from {address} (Name taken)")
                                 send_message(recv_sock, ["START_FAIL", "Server", "Screen name taken."])
                             else:
                                 clients[screen_name_to_add] = recv_sock
-                                logging.info(f"Registered client '{screen_name_to_add}' from {address}")
+                                logging.info(f"Client registered: {screen_name_to_add} from {address}")
                                 client_added = True
 
-                        # Broadcast join outside lock
+                        # Broadcast join outside lock (broadcast logs itself)
                         if client_added:
                              broadcast(["BROADCAST", "Server", f"{screen_name_to_add} has joined!"])
-                        elif recv_sock: # Close rejected socket outside lock
+                        elif recv_sock: # Close rejected socket
                              try: recv_sock.close()
                              except OSError: pass
-
-                    else: # Invalid or non-START message
-                        logging.warning(f"Invalid/missing START from {address}. Msg={msg}. Closing.")
+                    else: # Invalid START
+                        logging.warning(f"Invalid START from {address}. Closing connection.")
                         if recv_sock:
                             try: recv_sock.close()
                             except OSError: pass
-
                 except OSError:
-                    logging.info("Writing server socket closed, stopping accept loop.")
-                    break # Stop loop if listen socket closed
+                    logging.info("Writing server socket closed.")
+                    break
                 except Exception as e:
                     logging.error(f"Error handling connection {address or 'N/A'} in writing thread: {e}")
-                    if recv_sock: # Attempt to close problematic socket
+                    if recv_sock:
                         try: recv_sock.close()
                         except OSError: pass
-                    time.sleep(1) # Avoid busy-loop
-
+                    time.sleep(1)
     except Exception as e:
          logging.critical(f"Writing server failed to initialize: {e}", exc_info=True)
     finally:
          logging.info("Writing server thread finished.")
+
 
 # --- Main Execution ---
 if __name__ == "__main__":
