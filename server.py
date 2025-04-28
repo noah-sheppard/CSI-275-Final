@@ -189,34 +189,54 @@ def writing_server(host, port):
         logging.info(f"Writing server listening on {host}:{port}")
         while True:
             recv_sock = None # Define for potential finally block use
+            address = None
             try:
+                # ***** LOG POINT 1 *****
+                logging.info(f"***** WRITING: Waiting to accept a connection on {port}... *****")
                 recv_sock, address = listen_sock.accept()
-                logging.info(f"Accepted receiving connection from {address}")
-                msg = receive_message(recv_sock)
+                # ***** LOG POINT 2 *****
+                logging.info(f"***** WRITING: Accepted receiving connection from {address} *****")
 
-                if msg and msg[0] == "START" and len(msg) == 2:
-                    screen_name = msg[1]
-                    with clients_lock:
-                        if screen_name in clients:
-                            logging.warning(f"Screen name '{screen_name}' taken. Rejecting {address}.")
-                            send_message(recv_sock, ["START_FAIL", "Server", "Screen name taken."])
-                            recv_sock.close()
-                        else:
-                            clients[screen_name] = recv_sock
-                            logging.info(f"Registered '{screen_name}' from {address}")
-                            broadcast(["BROADCAST", "Server", f"{screen_name} has joined!"])
+                # ***** LOG POINT 3 *****
+                logging.info(f"***** WRITING: Attempting to receive START from {address} *****")
+                msg = receive_message(recv_sock) # This call might block or fail
+                # ***** LOG POINT 4 *****
+                logging.info(f"***** WRITING: Received from {address}: {msg} *****")
+
+                # Check if msg is valid before processing
+                if msg and isinstance(msg, list) and len(msg) >= 1 and msg[0] == "START":
+                    if len(msg) == 2 and isinstance(msg[1], str) and msg[1]: # Check screen_name validity
+                         screen_name = msg[1]
+                         logging.info(f"***** WRITING: Received valid START for '{screen_name}' from {address} *****")
+                         with clients_lock:
+                             if screen_name in clients:
+                                 logging.warning(f"Screen name '{screen_name}' taken. Rejecting {address}.")
+                                 send_message(recv_sock, ["START_FAIL", "Server", "Screen name taken."])
+                                 recv_sock.close()
+                             else:
+                                 clients[screen_name] = recv_sock
+                                 logging.info(f"Registered '{screen_name}' from {address}")
+                                 # Broadcast join message AFTER adding client
+                                 broadcast(["BROADCAST", "Server", f"{screen_name} has joined!"])
+                    else:
+                         # Handle invalid START format (e.g., missing name)
+                         logging.warning(f"Invalid START format from {address}. Received: {msg}. Closing.")
+                         if recv_sock: recv_sock.close()
                 else:
-                    logging.warning(f"Invalid START from {address}. Closing.")
+                    # Handle non-START messages or receive failures (msg is None)
+                    logging.warning(f"Did not receive valid START from {address}. Received: {msg}. Closing.")
                     if recv_sock: recv_sock.close()
 
-            except OSError:
-                logging.info("Writing server socket closed.")
+            except OSError as e:
+                logging.info(f"Writing server socket closed or error accepting: {e}.")
                 break # Stop listening if socket closed
             except Exception as e:
-                logging.error(f"Error accepting/processing START: {e}")
+                # Log which address failed if possible
+                logging.error(f"Error in writing_server loop for {address or 'N/A'}: {e}", exc_info=True)
                 if recv_sock:
                     try: recv_sock.close()
                     except OSError: pass
+        logging.info("Writing server thread finished.")
 
 # --- Main Execution ---
 if __name__ == "__main__":

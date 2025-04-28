@@ -113,58 +113,70 @@ def handle_sending(send_sock, screen_name):
 def handle_receiving(recv_sock, screen_name):
     """Handles receiving messages and printing them."""
     logging.info("Receiving thread started.")
-    if not send_message(recv_sock, ["START", screen_name]):
+    start_success = False
+    try:
+        # ***** LOG POINT 5 *****
+        logging.info(f"***** RECEIVER({screen_name}): Attempting to send START *****")
+        start_success = send_message(recv_sock, ["START", screen_name])
+        # ***** LOG POINT 6 *****
+        logging.info(f"***** RECEIVER({screen_name}): START message sent, success={start_success} *****")
+    except Exception as e:
+        # ***** LOG POINT 7 *****
+        logging.error(f"***** RECEIVER({screen_name}): Exception during START send: {e} *****")
+        stop_event.set() # Signal exit if START fails catastrophically
+        return
+
+    if not start_success:
         print("\n--- Failed to send START to server. Cannot join. ---")
         stop_event.set()
         return
 
+    # ***** LOG POINT 8 *****
+    logging.info(f"***** RECEIVER({screen_name}): Entering receive loop *****")
     while not stop_event.is_set():
         msg = receive_message(recv_sock)
-        if msg is None:
+        # ***** LOG POINT 9 *****
+        # logging.debug(f"***** RECEIVER({screen_name}): Received raw msg: {msg} *****") # DEBUG if needed
+
+        if msg is None: # Handle disconnect or receive error
             if not stop_event.is_set():
-                # Only print connection lost if not intentionally stopping
                 print("\n--- Connection lost with server. Press Enter to exit. ---")
                 stop_event.set() # Signal the sending thread
             break # Exit loop
 
+        # ... (rest of message processing and printing remains the same) ...
         try:
             if not isinstance(msg, list) or not msg: continue
 
             msg_type = msg[0]
             display_text = None
 
+            # ... (message type handling like BROADCAST, PRIVATE, etc) ...
             if msg_type == "BROADCAST" and len(msg) == 3:
                 sender, text = msg[1], msg[2]
                 if sender == "Server": display_text = f"--- {text} ---"
                 elif sender != screen_name: display_text = f"{sender}: {text}"
-                # Ignore self-broadcasts
             elif msg_type == "PRIVATE" and len(msg) == 4:
                 sender, text = msg[1], msg[2]
-                # Assuming server only sends PM if recipient matches screen_name
                 display_text = f"{sender} (private): {text}"
             elif msg_type == "EXIT" and len(msg) == 2:
                  sender = msg[1]
                  if sender != screen_name: display_text = f"--- {sender} has left. ---"
             elif msg_type == "START_FAIL" and len(msg) == 3:
                  reason = msg[2]
-                 # Print immediately and stop
                  print(f"\n!!! SERVER REJECTED: {reason}. Exiting. !!!")
                  stop_event.set()
                  break
 
-            # --- CORRECTED PRINTING ---
             if display_text:
-                # Print the message on a new line.
-                # This is the simplest approach. It might interrupt user typing visually,
-                # but the message will be clearly visible above the prompt line.
                 print(f"\n{display_text}")
-                # --- DO NOT REPRINT PROMPT HERE ---
 
         except Exception as e:
             logging.error(f"Error processing message {msg}: {e}")
 
+
+    logging.info(f"***** RECEIVER({screen_name}): Exited receive loop *****")
     logging.info("Receiving thread finished.")
-    # Add a newline when finishing to avoid prompt collision if exited abruptly
     print()
 
 
