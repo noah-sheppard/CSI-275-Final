@@ -24,10 +24,9 @@ import logging
 import time
 import re
 
-# Basic logging setup
+# Logging setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(threadName)s] %(levelname)s - %(message)s')
 
-# --- Protocol Helpers (Essential) ---
 def send_message(sock, message_data):
     """Packs and sends a message."""
     try:
@@ -55,9 +54,7 @@ def receive_message(sock):
     except (socket.error, struct.error, json.JSONDecodeError, ConnectionResetError, OSError) as e:
         logging.error(f"Receive failed: {e}")
         return None
-# --- End Protocol Helpers ---
 
-# --- Client Config & State ---
 SERVER_IP = sys.argv[1] if len(sys.argv) > 1 else '127.0.0.1'
 READING_PORT = 65432 # Server port we SEND to
 WRITING_PORT = 65433 # Server port we RECEIVE from
@@ -125,8 +122,9 @@ def handle_receiving(recv_sock, screen_name):
         msg = receive_message(recv_sock)
         if msg is None:
             if not stop_event.is_set():
+                # Only print connection lost if not intentionally stopping
                 print("\n--- Connection lost with server. Press Enter to exit. ---")
-                stop_event.set()
+                stop_event.set() # Signal the sending thread
             break # Exit loop
 
         try:
@@ -142,25 +140,33 @@ def handle_receiving(recv_sock, screen_name):
                 # Ignore self-broadcasts
             elif msg_type == "PRIVATE" and len(msg) == 4:
                 sender, text = msg[1], msg[2]
+                # Assuming server only sends PM if recipient matches screen_name
                 display_text = f"{sender} (private): {text}"
             elif msg_type == "EXIT" and len(msg) == 2:
                  sender = msg[1]
                  if sender != screen_name: display_text = f"--- {sender} has left. ---"
             elif msg_type == "START_FAIL" and len(msg) == 3:
                  reason = msg[2]
+                 # Print immediately and stop
                  print(f"\n!!! SERVER REJECTED: {reason}. Exiting. !!!")
                  stop_event.set()
                  break
 
+            # --- CORRECTED PRINTING ---
             if display_text:
-                # Simple print - may mess with prompt, but it's simpler
+                # Print the message on a new line.
+                # This is the simplest approach. It might interrupt user typing visually,
+                # but the message will be clearly visible above the prompt line.
                 print(f"\n{display_text}")
-                print(f"{screen_name}> ", end='', flush=True) # Reprint prompt attempt
+                # --- DO NOT REPRINT PROMPT HERE ---
 
         except Exception as e:
             logging.error(f"Error processing message {msg}: {e}")
 
     logging.info("Receiving thread finished.")
+    # Add a newline when finishing to avoid prompt collision if exited abruptly
+    print()
+
 
 # --- Main Execution ---
 if __name__ == "__main__":
