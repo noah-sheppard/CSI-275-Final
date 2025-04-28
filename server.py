@@ -205,37 +205,66 @@ def writing_server(host, port):
 
                 # Check if msg is valid before processing
                 if msg and isinstance(msg, list) and len(msg) >= 1 and msg[0] == "START":
-                    if len(msg) == 2 and isinstance(msg[1], str) and msg[1]: # Check screen_name validity
-                         screen_name = msg[1]
-                         logging.info(f"***** WRITING: Received valid START for '{screen_name}' from {address} *****")
+                    # Check screen_name validity within the START message
+                    if len(msg) == 2 and isinstance(msg[1], str) and msg[1]:
+                         screen_name_to_add = msg[1] # Use a distinct variable name
+                         client_added = False # Flag to track if registration occurred
+
+                         logging.info(f"***** WRITING: Received valid START for '{screen_name_to_add}' from {address} *****")
+                         # --- Lock acquired here ---
                          with clients_lock:
-                             if screen_name in clients:
-                                 logging.warning(f"Screen name '{screen_name}' taken. Rejecting {address}.")
+                             if screen_name_to_add in clients:
+                                 logging.warning(f"Screen name '{screen_name_to_add}' taken. Rejecting {address}.")
+                                 # Send failure message while holding lock is okay, but keep it brief
                                  send_message(recv_sock, ["START_FAIL", "Server", "Screen name taken."])
-                                 recv_sock.close()
+                                 # Close socket *after* releasing lock if possible, or handle potential errors if closed under lock
                              else:
-                                 clients[screen_name] = recv_sock
-                                 logging.info(f"Registered '{screen_name}' from {address}")
-                                 # Broadcast join message AFTER adding client
-                                 broadcast(["BROADCAST", "Server", f"{screen_name} has joined!"])
+                                 # Add the client under the lock
+                                 clients[screen_name_to_add] = recv_sock
+                                 logging.info(f"Registered '{screen_name_to_add}' from {address} under lock.")
+                                 client_added = True # Mark that we added the client within the lock
+                         # --- Lock released here ---
+
+                         # ***** MODIFICATION: Broadcast *after* releasing the lock *****
+                         if client_added:
+                             # Perform broadcast I/O outside the critical section
+                             logging.info(f"Broadcasting join for '{screen_name_to_add}' after releasing lock.")
+                             broadcast(["BROADCAST", "Server", f"{screen_name_to_add} has joined!"])
+                         elif recv_sock: # If client wasn't added (name taken), close the socket now
+                             try:
+                                 recv_sock.close()
+                                 logging.info(f"Closed rejected connection from {address}.")
+                             except OSError as e:
+                                  logging.error(f"Error closing rejected socket from {address}: {e}")
+
                     else:
-                         # Handle invalid START format (e.g., missing name)
+                         # Handle invalid START format (e.g., missing/invalid name)
                          logging.warning(f"Invalid START format from {address}. Received: {msg}. Closing.")
-                         if recv_sock: recv_sock.close()
+                         if recv_sock:
+                             try: recv_sock.close()
+                             except OSError: pass
                 else:
                     # Handle non-START messages or receive failures (msg is None)
                     logging.warning(f"Did not receive valid START from {address}. Received: {msg}. Closing.")
-                    if recv_sock: recv_sock.close()
+                    if recv_sock:
+                        try: recv_sock.close()
+                        except OSError: pass
 
             except OSError as e:
+                # Errors accepting connections or major socket issues
                 logging.info(f"Writing server socket closed or error accepting: {e}.")
-                break # Stop listening if socket closed
+                break # Stop listening if listen socket has issues
             except Exception as e:
-                # Log which address failed if possible
-                logging.error(f"Error in writing_server loop for {address or 'N/A'}: {e}", exc_info=True)
+                # Catch other exceptions during processing for a specific connection
+                logging.error(f"Error in writing_server loop processing connection {address or 'N/A'}: {e}", exc_info=True)
+                # Attempt to close the specific problematic client socket
                 if recv_sock:
-                    try: recv_sock.close()
-                    except OSError: pass
+                    try:
+                        recv_sock.close()
+                    except OSError:
+                        pass # Ignore errors if already closed
+
+        # End of while loop
         logging.info("Writing server thread finished.")
 
 # --- Main Execution ---

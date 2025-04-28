@@ -124,59 +124,82 @@ def handle_receiving(recv_sock, screen_name):
         # ***** LOG POINT 7 *****
         logging.error(f"***** RECEIVER({screen_name}): Exception during START send: {e} *****")
         stop_event.set() # Signal exit if START fails catastrophically
-        return
+        return # Exit this thread
 
     if not start_success:
         print("\n--- Failed to send START to server. Cannot join. ---")
-        stop_event.set()
-        return
+        stop_event.set() # Signal other thread to stop
+        return # Exit this thread
 
     # ***** LOG POINT 8 *****
     logging.info(f"***** RECEIVER({screen_name}): Entering receive loop *****")
     while not stop_event.is_set():
+        # ***** ADDED LOG POINT (Set level to DEBUG to see this) *****
+        # logging.debug(f"***** RECEIVER({screen_name}): Top of receive loop, waiting for message... *****")
         msg = receive_message(recv_sock)
         # ***** LOG POINT 9 *****
         # logging.debug(f"***** RECEIVER({screen_name}): Received raw msg: {msg} *****") # DEBUG if needed
 
         if msg is None: # Handle disconnect or receive error
             if not stop_event.is_set():
+                # Only print connection lost if not intentionally stopping
                 print("\n--- Connection lost with server. Press Enter to exit. ---")
                 stop_event.set() # Signal the sending thread
             break # Exit loop
 
-        # ... (rest of message processing and printing remains the same) ...
+        # Process received message
         try:
-            if not isinstance(msg, list) or not msg: continue
+            # Basic validation
+            if not isinstance(msg, list) or not msg:
+                logging.warning(f"Received invalid message format: {msg}")
+                continue
 
             msg_type = msg[0]
-            display_text = None
+            display_text = None # Text to be printed to the console
 
-            # ... (message type handling like BROADCAST, PRIVATE, etc) ...
+            # --- Handle different message types ---
             if msg_type == "BROADCAST" and len(msg) == 3:
                 sender, text = msg[1], msg[2]
-                if sender == "Server": display_text = f"--- {text} ---"
-                elif sender != screen_name: display_text = f"{sender}: {text}"
+                if sender == "Server":
+                    display_text = f"--- {text} ---"
+                elif sender != screen_name:
+                    # Don't display own broadcasts if server echoes them
+                    display_text = f"{sender}: {text}"
+                # else: ignore self-broadcast
+
             elif msg_type == "PRIVATE" and len(msg) == 4:
                 sender, text = msg[1], msg[2]
+                # Server should only route PMs intended for this client
                 display_text = f"{sender} (private): {text}"
+
             elif msg_type == "EXIT" and len(msg) == 2:
                  sender = msg[1]
-                 if sender != screen_name: display_text = f"--- {sender} has left. ---"
+                 # Don't display own exit message
+                 if sender != screen_name:
+                     display_text = f"--- {sender} has left. ---"
+
             elif msg_type == "START_FAIL" and len(msg) == 3:
                  reason = msg[2]
+                 # Print immediately, signal stop, and exit loop
                  print(f"\n!!! SERVER REJECTED: {reason}. Exiting. !!!")
                  stop_event.set()
-                 break
+                 break # Exit receive loop
 
+            # --- Print the processed message ---
             if display_text:
+                # Print the message on a new line.
+                # This avoids complex cursor manipulation but visually interrupts typing.
                 print(f"\n{display_text}")
+                # --- DO NOT REPRINT PROMPT HERE ---
 
         except Exception as e:
-            logging.error(f"Error processing message {msg}: {e}")
+            # Catch errors during message processing
+            logging.error(f"Error processing received message {msg}: {e}", exc_info=True)
 
-
+    # --- Loop finished ---
     logging.info(f"***** RECEIVER({screen_name}): Exited receive loop *****")
     logging.info("Receiving thread finished.")
+    # Add a newline when finishing to avoid prompt collision if exited abruptly
     print()
 
 
