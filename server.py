@@ -1,4 +1,4 @@
-"""Final Project, Threaded TCP Chat.
+""""Final Project, Threaded TCP Chat.
 
 Author: Noah Sheppard
 Class: CSI-275-01
@@ -133,9 +133,9 @@ def broadcast(message_list, sender_name="Server"):
             log_text[:50], '...' if len(log_text)>50 else ''
         ]
     elif msg_type == "EXIT":
-         # Break log format string for length
-         log_msg_tmpl = "Broadcasting '%s' notification for '%s' to %d clients."
-         log_args = [msg_type, sender_name, num_clients]
+        # Break log format string for length
+        log_msg_tmpl = "Broadcasting '%s' notification for '%s' to %d clients."
+        log_args = [msg_type, sender_name, num_clients]
 
     # Log intent
     if log_msg_tmpl:
@@ -278,13 +278,13 @@ def _process_client_message(msg, client_screen_name, address):
             return None # Explicitly return None here
         send_private(msg, recipient)
     elif msg_type == "EXIT" and len(msg) == 2:
-         logging.info("Received EXIT command from '%s'. Closing connection.",
-                      client_screen_name)
-         return "EXIT" # Signal to exit loop
+        logging.info("Received EXIT command from '%s'. Closing connection.",
+                     client_screen_name)
+        return "EXIT" # Signal to exit loop
     else:
-         # Break log string for length
-         logging.warning("Unknown message type '%s' or format from '%s': %s",
-                         msg_type, client_screen_name, msg)
+        # Break log string for length
+        logging.warning("Unknown message type '%s' or format from '%s': %s",
+                        msg_type, client_screen_name, msg)
 
     # Ensure explicit return for consistent return type (R1710 fix)
     return None
@@ -510,7 +510,7 @@ def writing_server(host, port):
                 # Use helper to close the specific socket that failed
                 # Break log string for length
                 _close_socket_safely(recv_sock,
-                    f"failed registration socket from {address or 'N/A'}")
+                                     f"failed registration socket from {address or 'N/A'}")
                 time.sleep(1) # Avoid busy-looping on persistent errors
 
     except Exception as e: # Catch error during server initialization
