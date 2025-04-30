@@ -1,45 +1,62 @@
 # .pylintrc
+
+# This configuration aims to enforce PEP8 and rubric requirements (like docstrings)
+# while allowing for some common patterns found in network scripts.
+
 [MESSAGES CONTROL]
 
-# Disable messages that might be too strict or less relevant for this project's scope.
-# Add more message IDs here if Pylint becomes too noisy after initial runs.
-# Examples (uncomment or add as needed):
+# Disable messages that are often too noisy or acceptable in this context.
+# Uncomment or add codes as needed after running Pylint.
 disable=
-    # C0103: invalid-name (sometimes allows short var names like 'e' in except)
-    # R0903: too-few-public-methods (often okay for simple classes/scripts)
-    # R0913: too-many-arguments (can happen in network handlers)
-    # C0301: line-too-long (uncomment if you want to allow > 100 chars)
-    # C0114: missing-module-docstring (optional for scripts)
-    # C0115: missing-class-docstring (if you add classes later)
+    C0103, # invalid-name: Allows short variable names like 'e' in except blocks, or 'ip', 'db', etc. if common. Adjust if too permissive.
+    R0903, # too-few-public-methods: Not relevant as no classes are used. Disabling prevents potential noise if classes were added later without many methods.
+    # Consider uncommenting if they become problematic:
+    # W0703, # broad-except: Catching 'Exception' is done but logged; might be acceptable here. Uncomment if Pylint complains excessively.
+    # R0913, # too-many-arguments: Your handlers seem okay now, but disable if they grow complex.
+    # C0301, # line-too-long: If the 100 limit is too restrictive later.
 
-# Enable messages important for the rubric (docstrings)
-# By default, Pylint usually has these enabled but might score them low.
-# Explicitly enabling ensures they're considered.
+# Enable specific checks explicitly (although many are default).
+# This ensures they are active and emphasizes their importance.
 enable=
-    C0116, # missing-function-docstring (or missing-method-docstring)
-    # W0611, # unused-import (Good practice)
-    # W0612, # unused-variable (Good practice)
-
-
-[REPORTS]
-
-# Score threshold below which Pylint will exit with an error code.
-# Set this reasonably high to enforce quality but allow minor issues.
-# 8.0 is a good starting point. Raise to 9.0 or 9.5 for stricter checks.
-score=yes # Ensure score is calculated and reported
+    C0116, # missing-function-docstring (implicitly covers methods too) - CRUCIAL for rubric.
+    W0611, # unused-import - Good practice.
+    W0612, # unused-variable - Good practice.
+    # Pylint enables most standard checks (like undefined-variable, syntax-error etc.) by default.
 
 [BASIC]
 
-# Check for missing docstrings on functions and methods.
-no-docstring-rgx=^_$ # Don't require docstrings for methods starting with _ (internal)
+# Require docstrings on functions and methods (covered by C0116 enabled above).
+# This regex exempts functions/methods starting with _ (intended for internal use).
+no-docstring-rgx=^_
 
-# Regular expression for variable names allowed (default is fine for PEP8)
-# variable-rgx=...
+# Good variable names regexp
+# Allows snake_case, CONSTANT_CASE, and optionally k for simple loop vars.
+# Modify if needed. Default is usually fine.
+# variable-rgx=[a-z_][a-z0-9_]{2,30}$
+
+# Good argument names regexp
+# Allows snake_case. Default is usually fine.
+# argument-rgx=[a-z_][a-z0-9_]{2,30}$
 
 [FORMAT]
 
-# Enforce PEP8 line length (default is 100, PEP8 standard is 79, 100 is common)
+# Expected maximum line length (PEP8 standard is 79, but 100 is a common modern choice).
 max-line-length=100
 
-# Expected indentation (default is 4 spaces)
+# Expected indentation (4 spaces is standard).
 indent-string='    '
+
+# No space allowed around keyword argument assignment in calls
+# no-space-check=keyword-argument-assignment
+
+# ------------
+# Score Reporting Note:
+# Pylint's exit code based on score is controlled via the command line,
+# not usually within the .pylintrc file itself.
+# To fail CI/build if score is below 9.0, run Pylint like this:
+#
+#    pylint --fail-under=9.0 your_module.py your_other_module.py
+#
+# The score itself will always be reported when Pylint runs unless disabled
+# with `--reports=n` or similar.
+# ------------
