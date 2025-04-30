@@ -101,10 +101,10 @@ def _handle_user_input(user_input, screen_name):
         if match:
             recipient, text = match.groups()
             if recipient and text.strip(): # Ensure recipient and text are not empty
-                 msg_to_send = ["PRIVATE", screen_name, text.strip(), recipient]
-                 logging.info("Preparing private message to %s", recipient)
+                msg_to_send = ["PRIVATE", screen_name, text.strip(), recipient]
+                logging.info("Preparing private message to %s", recipient)
             else:
-                 print("Invalid private message format: Use @recipient message")
+                print("Invalid private message format: Use @recipient message")
         else:
             print("Invalid private message format: Use @recipient message")
     else: # Default to BROADCAST message
@@ -172,9 +172,9 @@ def _process_received_message(msg, screen_name):
         if msg_type == "BROADCAST" and len(msg) == 3:
             sender, text = msg[1], msg[2]
             if sender == "Server": # Server announcements
-                 display_text = f"*** {text} ***"
+                display_text = f"*** {text} ***"
             elif sender != screen_name: # Messages from other users
-                 display_text = f"{sender}: {text}"
+                display_text = f"{sender}: {text}"
              # Do not display own broadcast messages echoed back
 
         # Process PRIVATE messages
@@ -185,19 +185,19 @@ def _process_received_message(msg, screen_name):
 
         # Process EXIT notifications from the server
         elif msg_type == "EXIT" and len(msg) == 2:
-             sender = msg[1]
-             if sender != screen_name: # Notification about other users leaving
-                  display_text = f"*** {sender} has left the chat. ***"
+            sender = msg[1]
+            if sender != screen_name: # Notification about other users leaving
+                 display_text = f"*** {sender} has left the chat. ***"
 
         # Process START_FAIL message from the server
         elif msg_type == "START_FAIL" and len(msg) == 3:
-              reason = msg[2]
-              # Break line for length
-              print(f"\n--- SERVER REJECTED CONNECTION:"
-                    f" {reason}. Exiting. ---")
-              logging.error("Server rejected connection: %s", reason)
-              stop_event.set() # Signal exit
-              return "EXIT_IMMEDIATELY" # Special signal to exit loop
+             reason = msg[2]
+             # Break line for length
+             print(f"\n--- SERVER REJECTED CONNECTION:"
+                   f" {reason}. Exiting. ---")
+             logging.error("Server rejected connection: %s", reason)
+             stop_event.set() # Signal exit
+             return "EXIT_IMMEDIATELY" # Special signal to exit loop
 
         return display_text
 
@@ -334,11 +334,11 @@ if __name__ == "__main__":
             recv_alive = recv_thread and recv_thread.is_alive()
             send_alive = send_thread and send_thread.is_alive()
             if not recv_alive or not send_alive:
-                 if not stop_event.is_set():
-                     # Break line for length
-                     logging.warning("A worker thread terminated unexpectedly."
-                                     " Signaling stop.")
-                     stop_event.set()
+                if not stop_event.is_set():
+                    # Break line for length
+                    logging.warning("A worker thread terminated unexpectedly."
+                                    " Signaling stop.")
+                    stop_event.set()
             time.sleep(0.5) # Main thread sleeps, letting worker threads run
 
     except socket.error as e:

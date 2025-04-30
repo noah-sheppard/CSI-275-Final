@@ -1,4 +1,4 @@
-""""Final Project, Threaded TCP Chat.
+"""Final Project, Threaded TCP Chat.
 
 Author: Noah Sheppard
 Class: CSI-275-01
@@ -380,14 +380,14 @@ def reading_server(host, port):
                 logging.info("Started handler thread for %s", address)
 
             except OSError as e:
-                 # Break log string for length
-                 logging.info("Reading server socket closed (%s)."
-                              " Stopping accept loop.", e)
-                 break # Exit loop if listening socket closed
+                # Break log string for length
+                logging.info("Reading server socket closed (%s)."
+                             " Stopping accept loop.", e)
+                break # Exit loop if listening socket closed
             except Exception as e: # Catch error during accept/thread start
-                 logging.error("Error accepting connection"
-                               " in reading thread: %s", e, exc_info=True)
-                 time.sleep(1) # Avoid busy-looping on accept errors
+                logging.error("Error accepting connection"
+                              " in reading thread: %s", e, exc_info=True)
+                time.sleep(1) # Avoid busy-looping on accept errors
     except Exception as e: # Catch error during server initialization
         # Log with traceback
         # Break log string for length
@@ -455,13 +455,13 @@ def _handle_registration(registration_sock, address):
 
         # Broadcast arrival *after* releasing lock, only if added
         if client_added:
-             # Break list for length/clarity
-             join_notification = [
-                 "BROADCAST",
-                 "Server",
-                 f"{screen_name_to_add} has joined the chat!"
-             ]
-             broadcast(join_notification, "Server")
+            # Break list for length/clarity
+            join_notification = [
+                "BROADCAST",
+                "Server",
+                f"{screen_name_to_add} has joined the chat!"
+            ]
+            broadcast(join_notification, "Server")
     else:
         # Invalid START message received
         # Break log string for length
@@ -514,26 +514,26 @@ def writing_server(host, port):
                 time.sleep(1) # Avoid busy-looping on persistent errors
 
     except Exception as e: # Catch error during server initialization
-         # Log with traceback
-         # Break log string for length
-         logging.critical("Writing server failed to initialize on %s:%s: %s",
-                          host, port, e, exc_info=True)
+        # Log with traceback
+        # Break log string for length
+        logging.critical("Writing server failed to initialize on %s:%s: %s",
+                         host, port, e, exc_info=True)
     finally:
-         # Use helper to close socket
-         _close_socket_safely(listen_sock, "Writing server listening socket")
-         # Break log string for length
-         logging.info("Writing server shutting down."
-                      " Cleaning up remaining client sockets.")
-         # Clean up client sockets under lock
-         with clients_lock:
-             # Make a copy to avoid modification during iteration issues
-             client_items = list(clients.items())
-             for name, sock in client_items:
-                 logging.info("Closing socket for '%s' during shutdown.", name)
-                 # Use helper to close socket
-                 _close_socket_safely(sock, f"socket for {name}")
-             clients.clear() # Clear the dictionary after closing all sockets
-         logging.info("Writing server thread finished.")
+        # Use helper to close socket
+        _close_socket_safely(listen_sock, "Writing server listening socket")
+        # Break log string for length
+        logging.info("Writing server shutting down."
+                     " Cleaning up remaining client sockets.")
+        # Clean up client sockets under lock
+        with clients_lock:
+            # Make a copy to avoid modification during iteration issues
+            client_items = list(clients.items())
+            for name, sock in client_items:
+                logging.info("Closing socket for '%s' during shutdown.", name)
+                # Use helper to close socket
+                _close_socket_safely(sock, f"socket for {name}")
+            clients.clear() # Clear the dictionary after closing all sockets
+        logging.info("Writing server thread finished.")
 
 
 # --- Main Execution ---
