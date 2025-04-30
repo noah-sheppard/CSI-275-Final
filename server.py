@@ -127,15 +127,14 @@ def broadcast(message_list, sender_name="Server"):
     if msg_type == "BROADCAST":
         log_text = message_list[2] if len(message_list) > 2 else "(Join/Leave message)"
         # Break log format string for length
-        log_msg_tmpl = ("Broadcasting '%s' from '%s' to %d clients: '%s%s'")
+        log_msg_tmpl = "Broadcasting '%s' from '%s' to %d clients: '%s%s'"
         log_args = [
             msg_type, sender_name, num_clients,
             log_text[:50], '...' if len(log_text)>50 else ''
         ]
     elif msg_type == "EXIT":
          # Break log format string for length
-         log_msg_tmpl = ("Broadcasting '%s' notification for '%s'"
-                         " to %d clients.")
+         log_msg_tmpl = "Broadcasting '%s' notification for '%s' to %d clients."
          log_args = [msg_type, sender_name, num_clients]
 
     # Log intent
@@ -403,17 +402,18 @@ def reading_server(host, port):
 def _validate_start_message(msg):
     """Checks if a message is a valid START message."""
     # Break conditions for length/readability and clarity
-    is_list = isinstance(msg, list)
-    if not is_list: return False
+    if not isinstance(msg, list):
+        return False
 
-    has_correct_len = len(msg) == 2
-    if not has_correct_len: return False
+    if len(msg) != 2:
+        return False
 
-    has_start_cmd = msg[0] == "START"
-    if not has_start_cmd: return False
+    if msg[0] != "START":
+        return False
 
-    has_valid_name = isinstance(msg[1], str) and msg[1] # Check name is non-empty string
-    if not has_valid_name: return False
+    # Check name is non-empty string
+    if not isinstance(msg[1], str) or not msg[1]:
+        return False
 
     return True # All checks passed
 

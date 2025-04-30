@@ -1,5 +1,3 @@
-# --- START OF FILE client.py ---
-
 """Final Project, Threaded TCP Chat.
 
 Author: Noah Sheppard
@@ -278,10 +276,10 @@ def get_valid_screen_name():
         # Use \w which includes letters, numbers, and underscore
         if s_name and re.match(r'^\w+$', s_name) and '@' not in s_name:
             return s_name
-        else:
-            # Break line for length
-            print("Invalid screen name. Please use only letters, numbers,"
-                  " and underscores. No spaces or '@'.")
+        # Remove unnecessary else
+        # Break line for length
+        print("Invalid screen name. Please use only letters, numbers,"
+              " and underscores. No spaces or '@'.")
 
 
 # --- Main Execution ---
