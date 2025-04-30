@@ -514,26 +514,26 @@ def writing_server(host, port):
                 time.sleep(1) # Avoid busy-looping on persistent errors
 
     except Exception as e: # Catch error during server initialization
-        # Log with traceback
-        # Break log string for length
-        logging.critical("Writing server failed to initialize on %s:%s: %s",
-                         host, port, e, exc_info=True)
+         # Log with traceback
+         # Break log string for length
+         logging.critical("Writing server failed to initialize on %s:%s: %s",
+                          host, port, e, exc_info=True)
     finally:
-        # Use helper to close socket
-        _close_socket_safely(listen_sock, "Writing server listening socket")
-        # Break log string for length
-        logging.info("Writing server shutting down."
-                     " Cleaning up remaining client sockets.")
-        # Clean up client sockets under lock
-        with clients_lock:
-            # Make a copy to avoid modification during iteration issues
-            client_items = list(clients.items())
-            for name, sock in client_items:
-                logging.info("Closing socket for '%s' during shutdown.", name)
-                # Use helper to close socket
-                _close_socket_safely(sock, f"socket for {name}")
-            clients.clear() # Clear the dictionary after closing all sockets
-        logging.info("Writing server thread finished.")
+         # Use helper to close socket
+         _close_socket_safely(listen_sock, "Writing server listening socket")
+         # Break log string for length
+         logging.info("Writing server shutting down."
+                      " Cleaning up remaining client sockets.")
+         # Clean up client sockets under lock
+         with clients_lock:
+             # Make a copy to avoid modification during iteration issues
+             client_items = list(clients.items())
+             for name, sock in client_items:
+                 logging.info("Closing socket for '%s' during shutdown.", name)
+                 # Use helper to close socket
+                 _close_socket_safely(sock, f"socket for {name}")
+             clients.clear() # Clear the dictionary after closing all sockets
+         logging.info("Writing server thread finished.")
 
 
 # --- Main Execution ---

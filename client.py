@@ -187,17 +187,17 @@ def _process_received_message(msg, screen_name):
         elif msg_type == "EXIT" and len(msg) == 2:
             sender = msg[1]
             if sender != screen_name: # Notification about other users leaving
-                 display_text = f"*** {sender} has left the chat. ***"
+                display_text = f"*** {sender} has left the chat. ***"
 
         # Process START_FAIL message from the server
         elif msg_type == "START_FAIL" and len(msg) == 3:
-             reason = msg[2]
-             # Break line for length
-             print(f"\n--- SERVER REJECTED CONNECTION:"
-                   f" {reason}. Exiting. ---")
-             logging.error("Server rejected connection: %s", reason)
-             stop_event.set() # Signal exit
-             return "EXIT_IMMEDIATELY" # Special signal to exit loop
+            reason = msg[2]
+            # Break line for length
+            print(f"\n--- SERVER REJECTED CONNECTION:"
+                  f" {reason}. Exiting. ---")
+            logging.error("Server rejected connection: %s", reason)
+            stop_event.set() # Signal exit
+            return "EXIT_IMMEDIATELY" # Special signal to exit loop
 
         return display_text
 
