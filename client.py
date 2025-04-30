@@ -24,6 +24,11 @@ import logging
 import time
 import re
 
+SERVER_IP = sys.argv[1] if len(sys.argv) > 1 else '127.0.0.1'
+READING_PORT = 65432 # Server port we SEND to
+WRITING_PORT = 65433 # Server port we RECEIVE from
+stop_event = threading.Event()
+
 # Logging setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(threadName)s] %(levelname)s - %(message)s')
 
@@ -55,16 +60,10 @@ def receive_message(sock):
         logging.error(f"Receive failed: {e}")
         return None
 
-SERVER_IP = sys.argv[1] if len(sys.argv) > 1 else '127.0.0.1'
-READING_PORT = 65432 # Server port we SEND to
-WRITING_PORT = 65433 # Server port we RECEIVE from
-stop_event = threading.Event()
-
-# --- Client Threads ---
 def handle_sending(send_sock, screen_name):
     """Handles user input and sends messages."""
     logging.info("Sending thread ready. Enter messages or commands.")
-    print("\nType messages, '@recipient msg', or '!exit'.")
+    print("\nEnter the following: <message>, '<@recipient> <message>', or '!exit'.")
 
     while not stop_event.is_set():
         try:
@@ -113,37 +112,28 @@ def handle_sending(send_sock, screen_name):
 def handle_receiving(recv_sock, screen_name):
     """Handles receiving messages and printing them."""
     logging.info("Receiving thread started.")
-    start_success = False
     try:
-        # ***** LOG POINT 5 *****
-        logging.info(f"***** RECEIVER({screen_name}): Attempting to send START *****")
+        logging.info(f"RECEIVER({screen_name}): Attempting to send START")
         start_success = send_message(recv_sock, ["START", screen_name])
-        # ***** LOG POINT 6 *****
-        logging.info(f"***** RECEIVER({screen_name}): START message sent, success={start_success} *****")
+        logging.info(f"RECEIVER({screen_name}): START message sent, success={start_success}")
     except Exception as e:
-        # ***** LOG POINT 7 *****
-        logging.error(f"***** RECEIVER({screen_name}): Exception during START send: {e} *****")
+        logging.error(f"RECEIVER({screen_name}): Exception during START send: {e}")
         stop_event.set() # Signal exit if START fails catastrophically
         return # Exit this thread
 
     if not start_success:
-        print("\n--- Failed to send START to server. Cannot join. ---")
+        print("\nFailed to send START to server. Cannot join.")
         stop_event.set() # Signal other thread to stop
         return # Exit this thread
 
-    # ***** LOG POINT 8 *****
-    logging.info(f"***** RECEIVER({screen_name}): Entering receive loop *****")
+    logging.info(f"RECEIVER({screen_name}): Entering receive loop")
     while not stop_event.is_set():
-        # ***** ADDED LOG POINT (Set level to DEBUG to see this) *****
-        # logging.debug(f"***** RECEIVER({screen_name}): Top of receive loop, waiting for message... *****")
         msg = receive_message(recv_sock)
-        # ***** LOG POINT 9 *****
-        # logging.debug(f"***** RECEIVER({screen_name}): Received raw msg: {msg} *****") # DEBUG if needed
 
         if msg is None: # Handle disconnect or receive error
             if not stop_event.is_set():
                 # Only print connection lost if not intentionally stopping
-                print("\n--- Connection lost with server. Press Enter to exit. ---")
+                print("\nConnection lost with server. Press Enter to exit.")
                 stop_event.set() # Signal the sending thread
             break # Exit loop
 
@@ -157,15 +147,14 @@ def handle_receiving(recv_sock, screen_name):
             msg_type = msg[0]
             display_text = None # Text to be printed to the console
 
-            # --- Handle different message types ---
+            # Handle different message types
             if msg_type == "BROADCAST" and len(msg) == 3:
                 sender, text = msg[1], msg[2]
                 if sender == "Server":
-                    display_text = f"--- {text} ---"
+                    display_text = f"{text}"
                 elif sender != screen_name:
                     # Don't display own broadcasts if server echoes them
                     display_text = f"{sender}: {text}"
-                # else: ignore self-broadcast
 
             elif msg_type == "PRIVATE" and len(msg) == 4:
                 sender, text = msg[1], msg[2]
@@ -176,16 +165,15 @@ def handle_receiving(recv_sock, screen_name):
                  sender = msg[1]
                  # Don't display own exit message
                  if sender != screen_name:
-                     display_text = f"--- {sender} has left. ---"
+                     display_text = f"{sender} has left."
 
             elif msg_type == "START_FAIL" and len(msg) == 3:
                  reason = msg[2]
                  # Print immediately, signal stop, and exit loop
-                 print(f"\n!!! SERVER REJECTED: {reason}. Exiting. !!!")
+                 print(f"\nSERVER REJECTED: {reason}. Exiting.")
                  stop_event.set()
                  break # Exit receive loop
 
-            # --- Print the processed message ---
             if display_text:
                 # Print the message on a new line.
                 # This avoids complex cursor manipulation but visually interrupts typing.
@@ -196,8 +184,7 @@ def handle_receiving(recv_sock, screen_name):
             # Catch errors during message processing
             logging.error(f"Error processing received message {msg}: {e}", exc_info=True)
 
-    # --- Loop finished ---
-    logging.info(f"***** RECEIVER({screen_name}): Exited receive loop *****")
+    logging.info(f"RECEIVER({screen_name}): Exited receive loop")
     logging.info("Receiving thread finished.")
     # Add a newline when finishing to avoid prompt collision if exited abruptly
     print()
@@ -233,13 +220,13 @@ if __name__ == "__main__":
             time.sleep(0.5) # Check stop_event periodically
 
     except socket.error as e:
-        print(f"\n--- Connection Error: {e} ---")
+        print(f"\nConnection Error: {e}")
         logging.critical(f"Cannot connect to server: {e}")
     except Exception as e:
-        print(f"\n--- Unexpected Error: {e} ---")
+        print(f"\nUnexpected Error: {e}")
         logging.critical(f"Client main error: {e}", exc_info=True)
     finally:
-        print("--- Disconnecting ---")
+        print("Disconnecting")
         stop_event.set() # Ensure threads know to stop
         # Close sockets if they exist
         if send_sock:
@@ -250,6 +237,5 @@ if __name__ == "__main__":
              except OSError: pass
         logging.info("Client finished.")
         print("Goodbye.")
-        # Give threads a moment to potentially finish cleanup
         time.sleep(0.2)
         sys.exit(0) # Force exit if threads hang

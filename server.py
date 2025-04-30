@@ -23,12 +23,17 @@ import logging
 import sys
 import time
 
+HOST = '0.0.0.0'
+READING_PORT = 65432
+WRITING_PORT = 65433
+clients = {}
+clients_lock = threading.Lock()
+
 # Logging setup
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s [%(threadName)s] %(levelname)s: %(message)s',
-                    datefmt='%H:%M:%S') # Use HH:MM:SS for time
+                    datefmt='%H:%M:%S') # for Time
 
-# --- Protocol Helpers (Essential) ---
 def send_message(sock, message_data):
     """Packs and sends a message (list -> JSON -> UTF-8 -> length prefix -> socket)."""
     try:
@@ -38,11 +43,9 @@ def send_message(sock, message_data):
         sock.sendall(encoded_message)
         return True
     except (socket.error, BrokenPipeError, OSError):
-        # Keep minimal error logging for send failures
-        # logging.error(f"Send failed to {sock.getpeername() if sock else 'N/A'}: {e}") # Too verbose
         return False # Let caller handle outcome
     except Exception as e:
-        logging.error(f"Unexpected error sending message: {e}")
+        logging.error(f"Unexpected error: {e}")
         return False
 
 def receive_message(sock):
@@ -56,49 +59,35 @@ def receive_message(sock):
         received_data = b''
         while len(received_data) < message_length:
             chunk = sock.recv(min(message_length - len(received_data), 4096))
-            if not chunk: return None # Connection closed during read
+            if not chunk:
+                return None # Connection closed during read
             received_data += chunk
 
         return json.loads(received_data.decode('utf-8'))
     except (socket.error, struct.error, json.JSONDecodeError, ConnectionResetError, OSError):
-        # Log minimally on receive error - often just indicates disconnect
-        # logging.error(f"Receive failed/disconnect: {e}") # Can be noisy
         return None
     except Exception as e:
-        logging.error(f"Unexpected error receiving message: {e}")
+        logging.error(f"Unexpected error: {e}")
         return None
-# --- End Protocol Helpers ---
-
-# --- Server Config & State ---
-HOST = '0.0.0.0'
-READING_PORT = 65432
-WRITING_PORT = 65433
-clients = {} # {screen_name: receiving_socket}
-clients_lock = threading.Lock()
-
-# --- Core Server Logic ---
 
 def broadcast(message_list, sender_name="Server"):
     """Sends message to all clients using the new log format."""
     msg_type = message_list[0]
-    client_count = 0
     with clients_lock: # Get count under lock for accuracy
         client_count = len(clients)
 
-    # Log message relay intention with new format
     # Check message type to avoid logging internal EXIT broadcasts triggered by remove_client excessively
     if msg_type != "EXIT" or sender_name != "Server": # Log user broadcasts and server joins
-         logging.info(f"Message: {msg_type} From: {sender_name} To: all ({client_count} clients)")
+         logging.info(f"Message: {msg_type} From: {sender_name} To: ({client_count} clients)")
 
     disconnected_clients = []
     with clients_lock:
         client_items = list(clients.items()) # Iterate over a copy
         for name, sock in client_items:
             if not send_message(sock, message_list):
-                # Log failures minimally
-                if msg_type != "EXIT": # Don't warn about failures sending EXIT notification
+                if msg_type != "EXIT":
                      logging.warning(f"Send failed to '{name}' during broadcast.")
-                disconnected_clients.append(name) # Mark for removal
+                disconnected_clients.append(name)
 
     # Remove disconnected outside lock iteration
     for name in disconnected_clients:
@@ -109,7 +98,6 @@ def send_private(message_list, recipient_name):
     msg_type = message_list[0]
     sender_name = message_list[1] # Assume sender is second element
 
-    # Log message relay intention with new format
     logging.info(f"Message: {msg_type} From: {sender_name} To: {recipient_name}")
 
     sock_to_send = None
@@ -121,11 +109,10 @@ def send_private(message_list, recipient_name):
 
     if sock_to_send:
         if not send_message(sock_to_send, message_list):
-            logging.warning(f"Send failed for PM to '{recipient_name}'. Removing client.")
-            remove_client(recipient_name, notify=True) # remove_client handles logging
+            logging.warning(f"Send failed for PM to '{recipient_name}'.")
+            remove_client(recipient_name, notify=True)
             return False # Send failed
         else:
-            # logging.info(f"PM successfully delivered to '{recipient_name}'.") # Optional: Too verbose now
             return True # Send succeeded
     elif recipient_found:
          logging.error(f"Logic error: Recipient '{recipient_name}' found but socket was None during PM send.")
@@ -157,7 +144,6 @@ def remove_client(screen_name, notify=True):
         # If notify is true, broadcast the EXIT message
         if notify and client_was_present:
             exit_notification = ["EXIT", screen_name]
-            # broadcast() will log the EXIT message relay if needed (modified broadcast to skip server EXITs)
             broadcast(exit_notification, "Server") # Let broadcast handle sending
     # No log needed if client wasn't present
 
@@ -177,7 +163,7 @@ def handle_client_messages(send_sock, address):
                 break
 
             # Basic validation
-            if not isinstance(msg, list) or len(msg) < 2: continue # Ignore silently
+            if not isinstance(msg, list) or len(msg) < 2: continue
 
             msg_type = msg[0]
             sender = msg[1]
@@ -192,12 +178,11 @@ def handle_client_messages(send_sock, address):
                          else: continue # Ignore messages until registered
                 else: continue # Ignore invalid first message
 
-            if not client_screen_name: continue # Should not happen if logic is correct
+            if not client_screen_name: continue
 
             # Verify sender matches identified client
-            if sender != client_screen_name: continue # Ignore mismatched messages silently
+            if sender != client_screen_name: continue
 
-            # --- Delegate message processing (logging happens inside broadcast/send_private) ---
             if msg_type == "BROADCAST" and len(msg) == 3:
                 broadcast(msg, client_screen_name)
             elif msg_type == "PRIVATE" and len(msg) == 4:
@@ -310,7 +295,7 @@ def writing_server(host, port):
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    logging.info(f"Starting server on host {HOST}...")
+    logging.info(f"Starting server on host: {HOST}")
     # Start threads
     write_thread = threading.Thread(target=writing_server, args=(HOST, WRITING_PORT), daemon=True, name="WritingThread")
     read_thread = threading.Thread(target=reading_server, args=(HOST, READING_PORT), daemon=True, name="ReadingThread")
@@ -328,6 +313,5 @@ if __name__ == "__main__":
         logging.critical(f"Server main loop error: {e}")
     finally:
         # No explicit socket closing needed here - handled by 'with' statement in threads
-        # Daemon threads will exit when main thread exits
         print("Server stopped.")
         sys.exit(0)
