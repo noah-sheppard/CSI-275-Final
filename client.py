@@ -94,22 +94,22 @@ def _handle_user_input(user_input, screen_name):
     msg_to_send = None
     if user_input.lower() == '!exit':
         msg_to_send = ["EXIT", screen_name]
-        logging.info("Sending EXIT command to server.")
+        # logging.info("Sending EXIT command to server.") # Removed for cleaner output
     elif user_input.startswith('@'):
         # Use regex to parse recipient and message text
         match = re.match(r'^@(\w+)\s+(.*)', user_input, re.DOTALL)
         if match:
             recipient, text = match.groups()
             if recipient and text.strip(): # Ensure recipient and text are not empty
-                msg_to_send = ["PRIVATE", screen_name, text.strip(), recipient]
-                logging.info("Preparing private message to %s", recipient)
+                 msg_to_send = ["PRIVATE", screen_name, text.strip(), recipient]
+                 # logging.info("Preparing private message to %s", recipient) # Removed for cleaner output
             else:
-                print("Invalid private message format: Use @recipient message")
+                 print("Invalid private message format: Use @recipient message")
         else:
             print("Invalid private message format: Use @recipient message")
     else: # Default to BROADCAST message
         msg_to_send = ["BROADCAST", screen_name, user_input.strip()]
-        logging.info("Preparing broadcast message")
+        # logging.info("Preparing broadcast message") # Removed for cleaner output
     return msg_to_send
 
 def handle_sending(sending_socket, screen_name):
@@ -138,7 +138,7 @@ def handle_sending(sending_socket, screen_name):
                     break
                 # Check if EXIT was sent successfully to stop loop
                 if msg_to_send[0] == "EXIT":
-                    logging.info("EXIT message sent successfully.")
+                    # logging.info("EXIT message sent successfully.") # Removed for cleaner output
                     stop_event.set() # Signal other threads to stop
                     break # Exit sending loop
 
